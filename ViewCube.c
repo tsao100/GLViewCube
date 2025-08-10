@@ -2,8 +2,12 @@
 #include <GL/glu.h>
 #include <math.h>
 
-float view_rot_x = 20, view_rot_y = -30, view_rot_z = 0;
-float cube_rot_x = 20, cube_rot_y = -30, cube_rot_z = 0;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+float view_rot_x = 35.264f, view_rot_y = 45.0f, view_rot_z = 0;
+float cube_rot_x = 35.264f, cube_rot_y = 45.0f, cube_rot_z = 0;
 int dragging = 0, dragging_main = 0, last_x, last_y;
 int drag_mode = 0; // 0: xy, 1: z
 
@@ -37,18 +41,35 @@ const float face_vertices[6][4][3] = {
 
 // 每個面的顏色
 const float face_colors[6][3] = {
-    {1,0,0},    // +X 紅
-    {0,1,0},    // -X 綠
-    {0,0,1},    // +Y 藍
-    {1,1,0},    // -Y 黃
-    {1,0,1},    // +Z 紫
-    {0,1,1}     // -Z 青
+    {0.8,0.8,0.8},    // +X 灰
+    {0.8,0.8,0.8},    // -X 灰
+    {0.8,0.8,0.8},    // +Y 灰
+    {0.8,0.8,0.8},    // -Y 灰
+    {0.8,0.8,0.8},    // +Z 灰
+    {0.8,0.8,0.8}     // -Z 灰
 };
 
 // --- 新增：細分面區域 ---
+#define SUBDIV_CELLS 54  // 6面 x 9格
+#define EDGE_DIV 4      // 分割點數量
 #define FACE_SUBDIV_X 3
 #define FACE_SUBDIV_Y 3
 #define FACE_CELLS (FACE_SUBDIV_X * FACE_SUBDIV_Y)
+
+// 定義分割比例
+const float subdiv_ratios[4] = {
+    0.0f,   // 開始
+    0.1f,   // 1/10
+    0.9f,   // 9/10
+    1.0f    // 結束
+};
+
+// 儲存預計算的頂點
+typedef struct {
+    float vertices[4][3];  // 每個小面的四個頂點
+} SubdivCell;
+
+static SubdivCell subdivided_faces[SUBDIV_CELLS];
 
 // 新增 hover 狀態
 int hover_face = -1; // 0~5
@@ -64,28 +85,39 @@ void lerp_face_vertex(const float v[4][3], float u, float vval, float out[3]) {
     }
 }
 
-// 繪製單一 cell，邊界比例 1:8:1
+// 生成細分頂點
+void generateSubdividedVertices() {
+    for (int face = 0; face < 6; face++) {
+        for (int y = 0; y < 3; y++) {
+            for (int x = 0; x < 3; x++) {
+                int cell_idx = face * 9 + y * 3 + x;
+                float x1 = subdiv_ratios[x];
+                float x2 = subdiv_ratios[x + 1];
+                float y1 = subdiv_ratios[y];
+                float y2 = subdiv_ratios[y + 1];
+                
+                lerp_face_vertex(face_vertices[face], x1, y1, subdivided_faces[cell_idx].vertices[0]);
+                lerp_face_vertex(face_vertices[face], x2, y1, subdivided_faces[cell_idx].vertices[1]);
+                lerp_face_vertex(face_vertices[face], x2, y2, subdivided_faces[cell_idx].vertices[2]);
+                lerp_face_vertex(face_vertices[face], x1, y2, subdivided_faces[cell_idx].vertices[3]);
+            }
+        }
+    }
+}
+
+// 繪製單一 cell
 void drawFaceCell(int face, int cell, int highlight) {
-    // 1:8:1 分割點
-    float edge_ratio[4] = {0.0f, 0.1f, 0.9f, 1.0f};
-    int cx = cell % FACE_SUBDIV_X;
-    int cy = cell / FACE_SUBDIV_X;
-    float u0 = edge_ratio[cx];
-    float u1 = edge_ratio[cx+1];
-    float v0 = edge_ratio[cy];
-    float v1 = edge_ratio[cy+1];
-    float vtx[4][3];
-    lerp_face_vertex(face_vertices[face], u0, v0, vtx[0]);
-    lerp_face_vertex(face_vertices[face], u1, v0, vtx[1]);
-    lerp_face_vertex(face_vertices[face], u1, v1, vtx[2]);
-    lerp_face_vertex(face_vertices[face], u0, v1, vtx[3]);
+    int cell_idx = face * 9 + cell;
+    
     if (highlight)
         glColor3f(1, 0.8, 0.2);
     else
         glColor3fv(face_colors[face]);
+        
     glBegin(GL_QUADS);
-    for (int i = 0; i < 4; ++i)
-        glVertex3fv(vtx[i]);
+    for (int i = 0; i < 4; i++) {
+        glVertex3fv(subdivided_faces[cell_idx].vertices[i]);
+    }
     glEnd();
 }
 
@@ -96,34 +128,57 @@ void drawCube(float size) {
 // 輔助：將螢幕座標轉換為 ViewCube 內部的 3D 空間座標
 void screenToViewCubeLocal(int x, int y, int winWidth, int winHeight, int size, float *out) {
     int vx = winWidth - size - 10;
-    int vy = winHeight - size - 10; // <--- 修正這裡
-    float fx = (float)(x - vx) / size;
-    float fy = 1.0f - (float)(y - vy) / size; // OpenGL Y 軸向上
-
-    // 轉換到 [-0.5, 0.5] 區間的 ViewCube 正投影平面
-    float px = (fx - 0.5f);
-    float py = (fy - 0.5f);
-
-    // 反向套用旋轉矩陣（將螢幕平面點轉回 cube local）
-    float rx = -cube_rot_x * M_PI / 180.0f;
-    float ry = -cube_rot_y * M_PI / 180.0f;
-    float rz = 0; // 若有 z 軸旋轉可加
-
-    // 先繞 Y 軸
-    float x1 = cos(ry)*px + sin(ry)*0.5f;
-    float z1 = -sin(ry)*px + cos(ry)*0.5f;
-    float y1 = py;
-
-    // 再繞 X 軸
-    float y2 = cos(rx)*y1 - sin(rx)*z1;
-    float z2 = sin(rx)*y1 + cos(rx)*z1;
+    int vy = winHeight - size - 10;
+    
+    // 將鼠標位置轉換到 NDC 空間 [-1, 1]
+    float fx = (2.0f * (x - vx) / (float)size) - 1.0f;
+    float fy = (2.0f * (y - vy) / (float)size) - 1.0f;
+    
+    // 視點在 z = 5
+    float eye_z = 5.0f;
+    float near_z = 1.0f;
+    float fov = 30.0f * M_PI / 180.0f;
+    float tan_half_fov = tanf(fov * 0.5f);
+    
+    // 計算近平面上的點
+    float near_x = fx * near_z * tan_half_fov;
+    float near_y = fy * near_z * tan_half_fov;
+    
+    // 從視點(0,0,eye_z)到近平面上的點(near_x,near_y,near_z)形成射線
+    float dx = near_x;
+    float dy = near_y;
+    float dz = near_z - eye_z;
+    
+    // 單位化射線方向
+    float len = sqrtf(dx*dx + dy*dy + dz*dz);
+    dx /= len;
+    dy /= len;
+    dz /= len;
+    
+    // 計算旋轉角度（與 drawViewCube 中的順序相反）
+    float ry = -cube_rot_y * M_PI / 180.0f;  // Y軸
+    float rx = -cube_rot_x * M_PI / 180.0f;  // X軸
+    float rz = -cube_rot_z * M_PI / 180.0f;  // Z軸
+    
+    // 先旋轉 Y 軸
+    float x1 = dx * cosf(ry) - dz * sinf(ry);
+    float y1 = dy;
+    float z1 = dx * sinf(ry) + dz * cosf(ry);
+    
+    // 再旋轉 X 軸
     float x2 = x1;
-
-    // 若有 z 軸旋轉可再加一段
-
-    out[0] = x2;
-    out[1] = y2;
-    out[2] = z2;
+    float y2 = y1 * cosf(rx) - z1 * sinf(rx);
+    float z2 = y1 * sinf(rx) + z1 * cosf(rx);
+    
+    // 最後旋轉 Z 軸
+    float x3 = x2 * cosf(rz) - y2 * sinf(rz);
+    float y3 = x2 * sinf(rz) + y2 * cosf(rz);
+    float z3 = z2;
+    
+    // 輸出轉換後的方向向量
+    out[0] = x3;
+    out[1] = y3;
+    out[2] = z3;
 }
 
 // 更新後的 hover 判斷
@@ -141,58 +196,108 @@ void checkViewCubeHover(int x, int y, int winWidth, int winHeight, int size) {
     float lx = local[0], ly = local[1], lz = local[2];
 
     // 判斷最近的面
-    float max_dot = -2.0f;
+    float max_dot = -1.0f;
     int max_face = -1;
-    float norm[6][3] = {
-        { 1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0,-1, 0}, {0, 0, 1}, {0, 0,-1}
-    };
-    float center[6][3] = {
-        {0.5,0,0}, {-0.5,0,0}, {0,0.5,0}, {0,-0.5,0}, {0,0,0.5}, {0,0,-0.5}
-    };
-    float v[3];
+    float threshold = 0.3f; // 調整閾值，使檢測更寬鬆
+    
+    // 檢查與每個面的交點
     for (int i = 0; i < 6; ++i) {
-        v[0] = lx - center[i][0];
-        v[1] = ly - center[i][1];
-        v[2] = lz - center[i][2];
-        float dot = -(v[0]*norm[i][0] + v[1]*norm[i][1] + v[2]*norm[i][2]);
-        if (dot > max_dot) { max_dot = dot; max_face = i; }
-    }
-
-    // 判斷是否在面上
-    float u, vcell;
-    int cell_x = -1, cell_y = -1;
-    if (max_face == 0 || max_face == 1) { // ±X
-        u = (lz + 0.5f);
-        vcell = (ly + 0.5f);
-    } else if (max_face == 2 || max_face == 3) { // ±Y
-        u = (lx + 0.5f);
-        vcell = (lz + 0.5f);
-    } else { // ±Z
-        u = (lx + 0.5f);
-        vcell = (ly + 0.5f);
-    }
-    float edge_ratio[4] = {0.0f, 0.1f, 0.9f, 1.0f};
-    // 判斷 cell_x
-    for (int i = 0; i < FACE_SUBDIV_X; ++i) {
-        if (u >= edge_ratio[i] && u < edge_ratio[i+1]) {
-            cell_x = i;
-            break;
+        float nx = face_dirs[i][0];
+        float ny = face_dirs[i][1];
+        float nz = face_dirs[i][2];
+        
+        // 計算射線與面法向量的夾角余弦值
+        float dot = lx * nx + ly * ny + lz * nz;
+        
+        // 只考慮朝向攝像機的面（dot < 0）
+        if (dot < 0.0f && -dot > max_dot) {
+            max_dot = -dot;
+            max_face = i;
         }
     }
-    // 判斷 cell_y (這裡要用 FACE_SUBDIV_Y)
-    for (int i = 0; i < FACE_SUBDIV_Y; ++i) {
-        if (vcell >= edge_ratio[i] && vcell < edge_ratio[i+1]) {
-            cell_y = i;
-            break;
-        }
-    }
-    if (cell_x >= 0 && cell_y >= 0) {
-        hover_face = max_face;
-        hover_cell = cell_y * FACE_SUBDIV_X + cell_x;
-        hover_type = 1;
-        hover_id = hover_face * FACE_CELLS + hover_cell;
+    
+    // 如果沒有找到合適的面
+    if (max_face < 0) {
         return;
     }
+
+    // 計算面上的 UV 座標
+    float u = 0.0f, vcell = 0.0f;
+    if (max_face >= 0) {
+        float scale = 1.0f / max_dot;  // 投影到面上的縮放因子
+        
+        switch (max_face) {
+            case 0: // +X
+                u = (-lz * scale + 0.5f);
+                vcell = (ly * scale + 0.5f);
+                break;
+            case 1: // -X
+                u = (lz * scale + 0.5f);
+                vcell = (ly * scale + 0.5f);
+                break;
+            case 2: // +Y
+                u = (lx * scale + 0.5f);
+                vcell = (-lz * scale + 0.5f);
+                break;
+            case 3: // -Y
+                u = (lx * scale + 0.5f);
+                vcell = (lz * scale + 0.5f);
+                break;
+            case 4: // +Z
+                u = (lx * scale + 0.5f);
+                vcell = (ly * scale + 0.5f);
+                break;
+            case 5: // -Z
+                u = (-lx * scale + 0.5f);
+                vcell = (ly * scale + 0.5f);
+                break;
+        }
+    }
+
+    // 判斷 cell 位置
+    int cell_x = -1, cell_y = -1;
+    // 檢查是否在有效範圍內（加入容差）
+    float tolerance = 0.05f;  // 增加容差值
+    if (u >= -tolerance && u <= 1.0f + tolerance &&
+        vcell >= -tolerance && vcell <= 1.0f + tolerance) {
+        
+        // 限制在有效範圍內
+        u = fmaxf(0.0f, fminf(1.0f, u));
+        vcell = fmaxf(0.0f, fminf(1.0f, vcell));
+        
+        // 判斷 cell_x
+        for (int i = 0; i < FACE_SUBDIV_X; ++i) {
+            float x1 = subdiv_ratios[i];
+            float x2 = subdiv_ratios[i+1];
+            if (u >= x1 - tolerance && u <= x2 + tolerance) {
+                cell_x = i;
+                break;
+            }
+        }
+        // 判斷 cell_y
+        for (int i = 0; i < FACE_SUBDIV_Y; ++i) {
+            float y1 = subdiv_ratios[i];
+            float y2 = subdiv_ratios[i+1];
+            if (vcell >= y1 - tolerance && vcell <= y2 + tolerance) {
+                cell_y = i;
+                break;
+            }
+        }
+        
+        if (cell_x >= 0 && cell_y >= 0) {
+            hover_face = max_face;
+            hover_cell = cell_y * FACE_SUBDIV_X + cell_x;
+            hover_type = 1;
+            hover_id = hover_face * FACE_CELLS + hover_cell;
+            return;
+        }
+    }
+    
+    // 如果沒有找到合適的 cell
+    hover_type = 0;
+    hover_id = -1;
+
+    // 其他類型的 hover 檢測（邊和角）可以在這裡添加
     hover_type = 0;
     hover_id = -1;
 }
@@ -441,9 +546,16 @@ void passiveMotion(int x, int y) {
     int win_h = glutGet(GLUT_WINDOW_HEIGHT);
     int size = 100;
     y = win_h - y; // 修正座標
-    int prev_type = hover_type, prev_id = hover_id;
+    
+    int prev_hover_face = hover_face;
+    int prev_hover_cell = hover_cell;
+    int prev_hover_type = hover_type;
+    
     checkViewCubeHover(x, y, win_w, win_h, size);
-    if (prev_type != hover_type || prev_id != hover_id) {
+    
+    if (prev_hover_face != hover_face || 
+        prev_hover_cell != hover_cell || 
+        prev_hover_type != hover_type) {
         glutPostRedisplay();
     }
 }
@@ -458,6 +570,8 @@ int main(int argc, char** argv) {
     glutInitWindowSize(800, 600);
     glutCreateWindow("3D View with ViewCube");
     glEnable(GL_DEPTH_TEST);
+    
+    generateSubdividedVertices();  // 初始化細分頂點
 
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
