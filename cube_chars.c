@@ -214,10 +214,10 @@ void drawDonutLabels(float innerR, float outerR, float height) {
     glPushMatrix(); glTranslatef(-pos,0.01f,0); glRotatef(90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[1],size); glPopMatrix();
     glPushMatrix(); glTranslatef(0,0.01f,pos); glRotatef(90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[2],size); glPopMatrix();
     glPushMatrix(); glTranslatef(0,0.01f,-pos); glRotatef(90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[3],size); glPopMatrix();
-    glPushMatrix(); glTranslatef(pos,-0.01f,0); glRotatef(90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[0],size); glPopMatrix();
-    glPushMatrix(); glTranslatef(-pos,-0.01f,0); glRotatef(90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[1],size); glPopMatrix();
-    glPushMatrix(); glTranslatef(0,-0.01f,pos); glRotatef(90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[2],size); glPopMatrix();
-    glPushMatrix(); glTranslatef(0,-0.01f,-pos); glRotatef(90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[3],size); glPopMatrix();
+    glPushMatrix(); glTranslatef(pos,-0.01f,0); glRotatef(-90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[0],size); glPopMatrix();
+    glPushMatrix(); glTranslatef(-pos,-0.01f,0); glRotatef(-90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[1],size); glPopMatrix();
+    glPushMatrix(); glTranslatef(0,-0.01f,pos); glRotatef(-90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[2],size); glPopMatrix();
+    glPushMatrix(); glTranslatef(0,-0.01f,-pos); glRotatef(-90,1,0,0); glRotatef(0,0,0,1); drawTexturedFace(texDonut[3],size); glPopMatrix();
 }
 
 void drawAxes(float length) {
@@ -284,7 +284,7 @@ void drawViewCube(int winW, int winH) {
 
     glColor3f(0.8f, 0.8f, 0.8f); // Gray
 
-    float s = 0.8f;
+    float s = 0.7f;
     // +X
     glPushMatrix(); glTranslatef(s,0,0); glRotatef(-90,0,1,0); glRotatef(180,0,0,1);drawTexturedFace(texIDs[3],s); 
     if (hoveredFace == FACE_POS_X) highlightFaceOverlay(s);
