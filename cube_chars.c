@@ -460,7 +460,7 @@ int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(1200, 800);
-    glutCreateWindow("FreeCAD-style ViewCube with Chinese Characters");
+    glutCreateWindow("AutoCAD-style ViewCube with Chinese Characters");
     initGL();
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
